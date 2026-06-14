@@ -100,7 +100,7 @@ async function readRequest(c) {
 
   const id = c.req.param("id")
   let data = await getData(c, id)
-  if (data === null) {
+  if (data == null) {
     console.log("No data found for id", id)
     return c.notFound()
   }
