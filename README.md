@@ -55,6 +55,34 @@ You can change the address that Express binds to by changing the `API_HOST`/`API
 For example, if you were going to serve Express from behind a Reverse Proxy, you might want to set `API_HOST=127.0.0.1`.
 </details>
 
+<details>
+<summary><h3>Self-Hosted (Go) :rocket:</h3></summary>
+<br>
+
+For maximum self-hosted performance, a zero-dependency Go implementation lives in [`goserver/`](goserver/). It is fully protocol-compatible with the Express Service (same routes, same responses) and benchmarks roughly 2-3x faster than the Deno version on large payloads.
+
+Build it (requires [Go 1.22+](https://go.dev/dl/)):
+```bash
+cd goserver
+go build -o express-go .
+```
+
+Run it:
+```bash
+./express-go
+```
+
+Configuration via environment variables:
+| Variable | Default | Purpose |
+|---|---|---|
+| `API_HOST` | `0.0.0.0` | Address to bind |
+| `API_PORT` | `3000` | Port to bind |
+| `GM_EXPRESS_EXPIRATION` | `300` | Data TTL in seconds |
+| `GM_EXPRESS_MAX_ENTRIES` | `8192` | Max stored items before eviction |
+
+Note: like the Docker setup, storage is in-memory — restarting the process drops all data.
+</details>
+
 ---
 
 ### Configuring the addon for self-hosting
