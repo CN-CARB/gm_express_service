@@ -1,9 +1,6 @@
-// Express Service - self-host edition, protocol-compatible with the Cloudflare/Deno version.
-// Routes and response shapes match index.js exactly.
 package main
 
 import (
-	"bytes"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
@@ -12,16 +9,20 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"sync"
+	"strings"
 	"time"
 )
 
-const maxDataSize = 24 * 1024 * 1024
+const (
+	maxDataSize         = 24 * 1024 * 1024
+	defaultMaxDataBytes = 512 * 1024 * 1024
+)
 
 var (
 	expiration      = envDuration("GM_EXPRESS_EXPIRATION", 5*time.Minute) // data TTL
 	tokenExpiration = 24 * time.Hour
-	maxEntries      = envInt("GM_EXPRESS_MAX_ENTRIES", 8192)
+	maxEntries      = envInt("GM_EXPRESS_MAX_ENTRIES", 1024)
+	maxDataBytes    = envInt("GM_EXPRESS_MAX_BYTES", defaultMaxDataBytes)
 )
 
 func envDuration(key string, def time.Duration) time.Duration {
@@ -38,84 +39,7 @@ func envInt(key string, def int) int {
 	return def
 }
 
-// --- TTL store: sharded map + janitor. Zero deps, safe for concurrent use. ---
-
-const numShards = 64
-
-type entry struct {
-	val []byte
-	exp time.Time
-}
-
-type shard struct {
-	mu sync.Mutex
-	m  map[string]entry
-}
-
-type Store struct {
-	shards   [numShards]shard
-	ttl      time.Duration
-	capPerSh int
-}
-
-func NewStore(ttl time.Duration, maxEntries int) *Store {
-	s := &Store{ttl: ttl, capPerSh: maxEntries/numShards + 1}
-	for i := range s.shards {
-		s.shards[i].m = make(map[string]entry)
-	}
-	go s.janitor()
-	return s
-}
-
-func (s *Store) pick(key string) *shard {
-	h := 0
-	for i := 0; i < len(key); i++ {
-		h = h*31 + int(key[i])
-	}
-	return &s.shards[h&(numShards-1)]
-}
-
-func (s *Store) Get(key string) ([]byte, bool) {
-	sh := s.pick(key)
-	sh.mu.Lock()
-	defer sh.mu.Unlock()
-	e, ok := sh.m[key]
-	if !ok || time.Now().After(e.exp) {
-		return nil, false
-	}
-	return e.val, true
-}
-
-func (s *Store) Set(key string, val []byte) {
-	sh := s.pick(key)
-	sh.mu.Lock()
-	defer sh.mu.Unlock()
-	// ponytail: over-cap shard evicts a random entry, not LRU. Upgrade to
-	// a real LRU per shard if hot-key eviction shows up in production.
-	if len(sh.m) >= s.capPerSh {
-		for k := range sh.m {
-			delete(sh.m, k)
-			break
-		}
-	}
-	sh.m[key] = entry{val: val, exp: time.Now().Add(s.ttl)}
-}
-
-func (s *Store) janitor() {
-	for range time.Tick(30 * time.Second) {
-		now := time.Now()
-		for i := range s.shards {
-			sh := &s.shards[i]
-			sh.mu.Lock()
-			for k, e := range sh.m {
-				if now.After(e.exp) {
-					delete(sh.m, k)
-				}
-			}
-			sh.mu.Unlock()
-		}
-	}
-}
+const tokenMaxEntries = 4096
 
 var (
 	dataStore  *Store
@@ -133,12 +57,23 @@ func makeUUID() string {
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(v)
+	data, err := json.Marshal(v)
+	if err != nil {
+		writeText(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+	_, _ = w.Write(data)
 }
 
-func validToken(r *http.Request, token string) bool {
-	_, ok := tokenStore.Get("token:" + token)
+func writeText(w http.ResponseWriter, body string, status int) {
+	w.Header().Set("Content-Type", "text/plain;charset=UTF-8")
+	w.WriteHeader(status)
+	_, _ = io.WriteString(w, body)
+}
+
+func validToken(token string) bool {
+	_, ok := tokenStore.Get(token)
 	return ok
 }
 
@@ -146,64 +81,78 @@ func validToken(r *http.Request, token string) bool {
 
 func handleRegister(w http.ResponseWriter, r *http.Request) {
 	server, client := makeUUID(), makeUUID()
-	tokenStore.Set("token:"+server, []byte(strconv.FormatInt(time.Now().UnixMilli(), 10)))
-	tokenStore.Set("token:"+client, []byte(strconv.FormatInt(time.Now().UnixMilli(), 10)))
+	tokenStore.Set(server, nil)
+	tokenStore.Set(client, nil)
 	writeJSON(w, map[string]any{"server": server, "client": client, "expiration": int(expiration.Seconds())})
 }
 
 func handleWrite(w http.ResponseWriter, r *http.Request) {
-	if !validToken(r, r.PathValue("token")) {
-		http.Error(w, "Invalid Request Parameters", http.StatusUnauthorized)
+	if !validToken(r.PathValue("token")) {
+		writeText(w, "Invalid Request Parameters", http.StatusUnauthorized)
+		return
+	}
+	if r.ContentLength > maxDataSize {
+		writeText(w, "Data exceeds maximum size of "+strconv.Itoa(maxDataSize), http.StatusRequestEntityTooLarge)
 		return
 	}
 	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxDataSize+1))
 	if err != nil || len(data) > maxDataSize {
-		http.Error(w, "Data exceeds maximum size of "+strconv.Itoa(maxDataSize), http.StatusRequestEntityTooLarge)
+		writeText(w, "Data exceeds maximum size of "+strconv.Itoa(maxDataSize), http.StatusRequestEntityTooLarge)
 		return
 	}
 	id := makeUUID()
-	dataStore.Set("size:"+id, []byte(strconv.Itoa(len(data))))
-	dataStore.Set("data:"+id, data)
+	if !dataStore.Set(id, data) {
+		writeText(w, "Failed to store data", http.StatusInternalServerError)
+		return
+	}
 	writeJSON(w, map[string]string{"id": id})
 }
 
 func handleRead(w http.ResponseWriter, r *http.Request) {
-	if !validToken(r, r.PathValue("token")) {
-		http.Error(w, "Invalid Request Parameters", http.StatusUnauthorized)
+	if !validToken(r.PathValue("token")) {
+		writeText(w, "Invalid Request Parameters", http.StatusUnauthorized)
 		return
 	}
-	data, ok := dataStore.Get("data:" + r.PathValue("id"))
+	data, ok := dataStore.Get(r.PathValue("id"))
 	if !ok {
-		http.Error(w, "404 page not found", http.StatusNotFound)
+		writeText(w, "404 Not Found", http.StatusNotFound)
 		return
 	}
-	// ServeContent handles Range requests (206), Content-Length, Content-Type.
 	w.Header().Set("Content-Type", "application/octet-stream")
-	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(data))
+	status := http.StatusOK
+	fullSize := len(data)
+	if start, end, ok := parseRange(fullSize, r.Header.Get("Range")); ok {
+		last := min(end+1, fullSize)
+		data = data[start:last]
+		status = http.StatusPartialContent
+		w.Header().Set("Accept-Ranges", "bytes")
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end-1, fullSize))
+	}
+	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+	w.WriteHeader(status)
+	_, _ = w.Write(data)
 }
 
 func handleSize(w http.ResponseWriter, r *http.Request) {
-	if !validToken(r, r.PathValue("token")) {
-		http.Error(w, "", http.StatusUnauthorized)
+	if !validToken(r.PathValue("token")) {
+		writeText(w, "", http.StatusUnauthorized)
 		return
 	}
-	size, ok := dataStore.Get("size:" + r.PathValue("id"))
+	data, ok := dataStore.Get(r.PathValue("id"))
 	if !ok {
-		http.Error(w, "Size not found", http.StatusNotFound)
+		writeJSON(w, struct{}{})
 		return
 	}
 	// Original returns size as a JSON string, keep compatible.
-	writeJSON(w, map[string]string{"size": string(size)})
+	writeJSON(w, map[string]string{"size": strconv.Itoa(len(data))})
 }
 
 func handleRevision(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]int{"revision": 1})
 }
 
-func main() {
-	dataStore = NewStore(expiration, maxEntries)
-	tokenStore = NewStore(tokenExpiration, maxEntries)
-
+func newMux(data, tokens *Store) http.Handler {
+	dataStore, tokenStore = data, tokens
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "https://github.com/CFC-Servers/gm_express", http.StatusFound)
@@ -214,8 +163,50 @@ func main() {
 	mux.HandleFunc("POST /v1/write/{token}", handleWrite)
 	mux.HandleFunc("GET /v1/revision", handleRevision)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "Not Found - you may need to update the gm_express addon!", http.StatusNotAcceptable)
+		if r.Method != http.MethodGet {
+			writeText(w, "404 Not Found", http.StatusNotFound)
+			return
+		}
+		writeText(w, "Not Found - you may need to update the gm_express addon!", http.StatusNotAcceptable)
 	})
+	return mux
+}
+
+func parseRange(total int, header string) (int, int, bool) {
+	if header == "" || !strings.Contains(header, "=") {
+		return 0, 0, false
+	}
+	part := strings.Split(strings.Split(strings.Replace(header, "bytes=", "", 1), ",")[0], "-")
+	start, err := strconv.Atoi(part[0])
+	if err != nil {
+		start = 0
+	}
+	start = min(max(start, 0), total)
+	end := total
+	if len(part) > 1 && part[1] != "" {
+		if parsed, err := strconv.Atoi(part[1]); err == nil {
+			end = parsed
+		}
+	}
+	end = min(max(end, start), total)
+	return start, end, true
+}
+
+func newServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       5 * time.Minute,
+		WriteTimeout:      5 * time.Minute,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+	}
+}
+
+func main() {
+	dataStore = NewStoreWithByteLimit(expiration, maxEntries, maxDataBytes)
+	tokenStore = NewStore(tokenExpiration, tokenMaxEntries)
 
 	host := os.Getenv("API_HOST")
 	if host == "" {
@@ -228,10 +219,5 @@ func main() {
 
 	addr := host + ":" + port
 	log.Printf("Express (go) listening on %s, data TTL %s, max entries %d", addr, expiration, maxEntries)
-	log.Fatal((&http.Server{
-		Addr:              addr,
-		Handler:           mux,
-		ReadHeaderTimeout: 10 * time.Second,
-		MaxHeaderBytes:    1 << 20,
-	}).ListenAndServe())
+	log.Fatal(newServer(addr, newMux(dataStore, tokenStore)).ListenAndServe())
 }

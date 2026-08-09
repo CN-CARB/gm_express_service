@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    paths:
+      - ".github/workflows/ci.yml"
+      - "docker/**"
+      - "goserver/**"
+  pull_request:
+    paths:
+      - ".github/workflows/ci.yml"
+      - "docker/**"
+      - "goserver/**"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  test-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: goserver/go.mod
+          cache-dependency-path: goserver/go.mod
+
+      - name: Unit tests
+        working-directory: goserver
+        run: go test ./...
+
+      - name: Build executable
+        working-directory: goserver
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o express-go .
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: express-go-linux-amd64
+          path: goserver/express-go
+          if-no-files-found: error
+
+      - name: Set image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Docker image
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+        run: docker build --file docker/Dockerfile --tag "$IMAGE:$GITHUB_SHA" .
+
+      - name: Publish Docker image
+        if: github.event_name == 'push'
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          IMAGE: ${{ steps.image.outputs.name }}
+        run: |
+          docker push "$IMAGE:$GITHUB_SHA"
+          if [[ "$GITHUB_REF_NAME" == "$DEFAULT_BRANCH" ]]; then
+            docker tag "$IMAGE:$GITHUB_SHA" "$IMAGE:latest"
+            docker push "$IMAGE:latest"
+          fi

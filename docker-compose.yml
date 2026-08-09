@@ -4,6 +4,10 @@ services:
     build:
       context: ./
       dockerfile: ./docker/Dockerfile
-    image: denoland/deno:alpine
+    image: gm-express-service:latest
+    environment:
+      GM_EXPRESS_EXPIRATION: "${GM_EXPRESS_EXPIRATION:-300}"
+      GM_EXPRESS_MAX_ENTRIES: "${GM_EXPRESS_MAX_ENTRIES:-1024}"
+      GM_EXPRESS_MAX_BYTES: "${GM_EXPRESS_MAX_BYTES:-536870912}"
     ports:
-      - "${API_HOST:-0.0.0.0}:${API_PORT:-3000}:8000/tcp"
+      - "${API_HOST:-0.0.0.0}:${API_PORT:-3000}:3000/tcp"

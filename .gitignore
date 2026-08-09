@@ -1,6 +1,6 @@
-node_modules
-yarn.lock
-
 # Go build artifacts
+goserver/goserver
 goserver/express-go
 goserver/express-go.exe
+/.omo/run-continuation
+.codegraph

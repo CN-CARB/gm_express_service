@@ -1,9 +1,11 @@
-FROM denoland/deno:alpine
+FROM docker.io/library/golang:1.26-alpine AS build
+WORKDIR /src
+COPY ./goserver/go.mod ./
+COPY ./goserver/*.go ./
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /express .
 
-USER deno
-WORKDIR /app
-
-COPY ./index.js /app/index.js
-COPY ./docker/selfhost.js /app/setup_app.js
-
-ENTRYPOINT ["deno", "run", "--allow-net", "--allow-read", "--allow-env", "/app/index.js"]
+FROM scratch
+COPY --from=build /express /express
+USER 65532:65532
+EXPOSE 3000
+ENTRYPOINT ["/express"]

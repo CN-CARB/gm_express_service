@@ -1,8 +1,0 @@
-name = "gmod-express"
-main = "./index.js"
-workers_dev = true
-
-compatibility_date = "2022-11-05"
-rules = [
-  { type = "ESModule", globs = ["setup_app.js"] }
-]
