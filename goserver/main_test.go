@@ -10,6 +10,12 @@ import (
 	"time"
 )
 
+type registration struct {
+	Server     string `json:"server"`
+	Client     string `json:"client"`
+	Expiration int    `json:"expiration"`
+}
+
 type observedReader struct {
 	read bool
 }
@@ -20,17 +26,7 @@ func (r *observedReader) Read([]byte) (int, error) {
 }
 
 func Test_HTTP_roundtrip_matches_legacy_service(t *testing.T) {
-	// Given
-	handler := newMux(NewStore(5*time.Minute, 1024), NewStore(24*time.Hour, 4096))
-
-	// When
-	register := request(t, handler, http.MethodGet, "/v1/register", "", "")
-	var registration struct {
-		Server     string `json:"server"`
-		Client     string `json:"client"`
-		Expiration int    `json:"expiration"`
-	}
-	decodeJSON(t, register, &registration)
+	handler, registration := registeredHandler(t, NewStore(5*time.Minute, 1024, 0))
 	write := request(t, handler, http.MethodPost, "/v1/write/"+registration.Server, "0123456789", "")
 	var written struct {
 		ID string `json:"id"`
@@ -40,8 +36,6 @@ func Test_HTTP_roundtrip_matches_legacy_service(t *testing.T) {
 	size := request(t, handler, http.MethodGet, "/v1/size/"+registration.Client+"/"+written.ID, "", "")
 	revision := request(t, handler, http.MethodGet, "/v1/revision", "", "")
 
-	// Then
-	assertStatus(t, register, http.StatusOK)
 	if registration.Server == "" || registration.Client == "" || registration.Expiration != 300 {
 		t.Fatalf("unexpected registration: %+v", registration)
 	}
@@ -55,13 +49,7 @@ func Test_HTTP_roundtrip_matches_legacy_service(t *testing.T) {
 }
 
 func Test_HTTP_errors_match_legacy_service(t *testing.T) {
-	// Given
-	handler := newMux(NewStore(5*time.Minute, 1024), NewStore(24*time.Hour, 4096))
-	register := request(t, handler, http.MethodGet, "/v1/register", "", "")
-	var registration struct {
-		Server string `json:"server"`
-	}
-	decodeJSON(t, register, &registration)
+	handler, registration := registeredHandler(t, NewStore(5*time.Minute, 1024, 0))
 
 	tests := []struct {
 		name   string
@@ -80,23 +68,14 @@ func Test_HTTP_errors_match_legacy_service(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// When
 			response := request(t, handler, tt.method, tt.path, "", "")
-
-			// Then
 			assertResponse(t, response, tt.status, tt.body)
 		})
 	}
 }
 
 func Test_HTTP_ranges_match_legacy_service(t *testing.T) {
-	// Given
-	handler := newMux(NewStore(5*time.Minute, 1024), NewStore(24*time.Hour, 4096))
-	register := request(t, handler, http.MethodGet, "/v1/register", "", "")
-	var registration struct {
-		Server string `json:"server"`
-	}
-	decodeJSON(t, register, &registration)
+	handler, registration := registeredHandler(t, NewStore(5*time.Minute, 1024, 0))
 	write := request(t, handler, http.MethodPost, "/v1/write/"+registration.Server, "0123456789", "")
 	var written struct {
 		ID string `json:"id"`
@@ -118,10 +97,7 @@ func Test_HTTP_ranges_match_legacy_service(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// When
 			response := request(t, handler, http.MethodGet, path, "", tt.rangeHeader)
-
-			// Then
 			assertResponse(t, response, tt.status, tt.body)
 			if got := response.Header().Get("Content-Range"); got != tt.contentRange {
 				t.Fatalf("Content-Range = %q, want %q", got, tt.contentRange)
@@ -131,13 +107,7 @@ func Test_HTTP_ranges_match_legacy_service(t *testing.T) {
 }
 
 func Test_HTTP_data_and_size_evict_together(t *testing.T) {
-	// Given
-	handler := newMux(NewStore(5*time.Minute, 1), NewStore(24*time.Hour, 4))
-	register := request(t, handler, http.MethodGet, "/v1/register", "", "")
-	var registration struct {
-		Server string `json:"server"`
-	}
-	decodeJSON(t, register, &registration)
+	handler, registration := registeredHandler(t, NewStore(5*time.Minute, 1, 0))
 	firstWrite := request(t, handler, http.MethodPost, "/v1/write/"+registration.Server, "first", "")
 	var first struct {
 		ID string `json:"id"`
@@ -149,13 +119,11 @@ func Test_HTTP_data_and_size_evict_together(t *testing.T) {
 	}
 	decodeJSON(t, secondWrite, &second)
 
-	// When
 	firstRead := request(t, handler, http.MethodGet, "/v1/read/"+registration.Server+"/"+first.ID, "", "")
 	firstSize := request(t, handler, http.MethodGet, "/v1/size/"+registration.Server+"/"+first.ID, "", "")
 	secondRead := request(t, handler, http.MethodGet, "/v1/read/"+registration.Server+"/"+second.ID, "", "")
 	secondSize := request(t, handler, http.MethodGet, "/v1/size/"+registration.Server+"/"+second.ID, "", "")
 
-	// Then
 	assertResponse(t, firstRead, http.StatusNotFound, "404 Not Found")
 	assertResponse(t, firstSize, http.StatusOK, "{}")
 	assertResponse(t, secondRead, http.StatusOK, "second")
@@ -163,14 +131,11 @@ func Test_HTTP_data_and_size_evict_together(t *testing.T) {
 }
 
 func Test_Store_Get_releases_expired_entry(t *testing.T) {
-	// Given
-	store := NewStore(-time.Second, 1)
+	store := NewStore(-time.Second, 1, 0)
 	store.Set("expired", []byte("payload"))
 
-	// When
 	_, found := store.Get("expired")
 
-	// Then
 	if found {
 		t.Fatal("expired entry was found")
 	}
@@ -181,23 +146,29 @@ func Test_Store_Get_releases_expired_entry(t *testing.T) {
 	}
 }
 
-func Test_HTTP_rejects_known_oversized_body_before_reading(t *testing.T) {
-	// Given
-	handler := newMux(NewStore(5*time.Minute, 1024), NewStore(24*time.Hour, 4096))
-	register := request(t, handler, http.MethodGet, "/v1/register", "", "")
-	var registration struct {
-		Server string `json:"server"`
+func Test_Store_Set_releases_expired_entries_at_capacity(t *testing.T) {
+	store := NewStore(-time.Second, 1, 0)
+	store.Set("expired", []byte("payload"))
+
+	stored := store.Set("replacement", nil)
+
+	if !stored || len(store.m) != 1 || store.usedBytes != 0 {
+		t.Fatalf("unexpected store state: stored=%t entries=%d bytes=%d", stored, len(store.m), store.usedBytes)
 	}
-	decodeJSON(t, register, &registration)
+	if _, found := store.m["expired"]; found {
+		t.Fatal("expired entry was retained")
+	}
+}
+
+func Test_HTTP_rejects_known_oversized_body_before_reading(t *testing.T) {
+	handler, registration := registeredHandler(t, NewStore(5*time.Minute, 1024, 0))
 	body := &observedReader{}
 	req := httptest.NewRequest(http.MethodPost, "/v1/write/"+registration.Server, body)
 	req.ContentLength = maxDataSize + 1
 	response := httptest.NewRecorder()
 
-	// When
 	handler.ServeHTTP(response, req)
 
-	// Then
 	assertResponse(t, response, http.StatusRequestEntityTooLarge, "Data exceeds maximum size of 25165824")
 	if body.read {
 		t.Fatal("oversized body was read")
@@ -205,31 +176,31 @@ func Test_HTTP_rejects_known_oversized_body_before_reading(t *testing.T) {
 }
 
 func Test_HTTP_rejects_write_when_memory_budget_is_full(t *testing.T) {
-	// Given
-	handler := newMux(NewStoreWithByteLimit(5*time.Minute, 1024, 5), NewStore(24*time.Hour, 4096))
-	register := request(t, handler, http.MethodGet, "/v1/register", "", "")
-	var registration struct {
-		Server string `json:"server"`
-	}
-	decodeJSON(t, register, &registration)
+	handler, registration := registeredHandler(t, NewStore(5*time.Minute, 1024, 5))
 	first := request(t, handler, http.MethodPost, "/v1/write/"+registration.Server, "12345", "")
 	assertStatus(t, first, http.StatusOK)
 
-	// When
 	second := request(t, handler, http.MethodPost, "/v1/write/"+registration.Server, "6", "")
 
-	// Then
 	assertResponse(t, second, http.StatusInternalServerError, "Failed to store data")
 }
 
 func Test_newServer_bounds_connection_lifetimes(t *testing.T) {
-	// Given
 	server := newServer(":0", http.NotFoundHandler())
 
-	// Then
 	if server.ReadTimeout < 5*time.Minute || server.WriteTimeout < 5*time.Minute || server.IdleTimeout == 0 {
 		t.Fatalf("transfer timeouts too short: %+v", server)
 	}
+}
+
+func registeredHandler(t *testing.T, data *Store) (http.Handler, registration) {
+	t.Helper()
+	handler := newMux(data, NewStore(24*time.Hour, 4096, 0))
+	response := request(t, handler, http.MethodGet, "/v1/register", "", "")
+	assertStatus(t, response, http.StatusOK)
+	var got registration
+	decodeJSON(t, response, &got)
+	return handler, got
 }
 
 func request(t *testing.T, handler http.Handler, method, path, body, rangeHeader string) *httptest.ResponseRecorder {
@@ -260,11 +231,7 @@ func assertStatus(t *testing.T, response *httptest.ResponseRecorder, want int) {
 func assertResponse(t *testing.T, response *httptest.ResponseRecorder, status int, body string) {
 	t.Helper()
 	assertStatus(t, response, status)
-	got, err := io.ReadAll(response.Body)
-	if err != nil {
-		t.Fatalf("read response: %v", err)
-	}
-	if string(got) != body {
+	if got := response.Body.String(); got != body {
 		t.Fatalf("body = %q, want %q", got, body)
 	}
 }

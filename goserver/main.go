@@ -19,18 +19,11 @@ const (
 )
 
 var (
-	expiration      = envDuration("GM_EXPRESS_EXPIRATION", 5*time.Minute) // data TTL
+	expiration      = time.Duration(envInt("GM_EXPRESS_EXPIRATION", 300)) * time.Second // data TTL
 	tokenExpiration = 24 * time.Hour
 	maxEntries      = envInt("GM_EXPRESS_MAX_ENTRIES", 1024)
 	maxDataBytes    = envInt("GM_EXPRESS_MAX_BYTES", defaultMaxDataBytes)
 )
-
-func envDuration(key string, def time.Duration) time.Duration {
-	if v, err := strconv.Atoi(os.Getenv(key)); err == nil && v > 0 {
-		return time.Duration(v) * time.Second
-	}
-	return def
-}
 
 func envInt(key string, def int) int {
 	if v, err := strconv.Atoi(os.Getenv(key)); err == nil && v > 0 {
@@ -205,8 +198,8 @@ func newServer(addr string, handler http.Handler) *http.Server {
 }
 
 func main() {
-	dataStore = NewStoreWithByteLimit(expiration, maxEntries, maxDataBytes)
-	tokenStore = NewStore(tokenExpiration, tokenMaxEntries)
+	dataStore = NewStore(expiration, maxEntries, maxDataBytes)
+	tokenStore = NewStore(tokenExpiration, tokenMaxEntries, 0)
 
 	host := os.Getenv("API_HOST")
 	if host == "" {

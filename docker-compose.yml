@@ -1,10 +1,8 @@
 services:
   app:
-    container_name: express_service
     build:
       context: ./
       dockerfile: ./docker/Dockerfile
-    image: gm-express-service:latest
     environment:
       GM_EXPRESS_EXPIRATION: "${GM_EXPRESS_EXPIRATION:-300}"
       GM_EXPRESS_MAX_ENTRIES: "${GM_EXPRESS_MAX_ENTRIES:-1024}"

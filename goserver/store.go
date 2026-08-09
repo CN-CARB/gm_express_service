@@ -19,11 +19,7 @@ type Store struct {
 	usedBytes  int
 }
 
-func NewStore(ttl time.Duration, maxEntries int) *Store {
-	return NewStoreWithByteLimit(ttl, maxEntries, 0)
-}
-
-func NewStoreWithByteLimit(ttl time.Duration, maxEntries, maxBytes int) *Store {
+func NewStore(ttl time.Duration, maxEntries, maxBytes int) *Store {
 	s := &Store{m: make(map[string]entry), ttl: ttl, maxEntries: maxEntries, maxBytes: maxBytes}
 	go s.janitor()
 	return s
@@ -70,12 +66,7 @@ func (s *Store) Set(key string, val []byte) bool {
 		}
 	}
 	if !exists && len(s.m) >= s.maxEntries {
-		for candidate, existing := range s.m {
-			if !now.Before(existing.exp) {
-				delete(s.m, candidate)
-				s.usedBytes -= len(existing.val)
-			}
-		}
+		s.deleteExpired(now)
 		if len(s.m) >= s.maxEntries {
 			// ponytail: random eviction avoids LRU bookkeeping. Add LRU only if
 			// production access patterns prove random eviction harmful.
@@ -91,17 +82,21 @@ func (s *Store) Set(key string, val []byte) bool {
 	return true
 }
 
+func (s *Store) deleteExpired(now time.Time) {
+	for key, existing := range s.m {
+		if !now.Before(existing.exp) {
+			delete(s.m, key)
+			s.usedBytes -= len(existing.val)
+		}
+	}
+}
+
 func (s *Store) janitor() {
 	ticker := time.NewTicker(30 * time.Second)
 	for range ticker.C {
 		now := time.Now()
 		s.mu.Lock()
-		for key, existing := range s.m {
-			if !now.Before(existing.exp) {
-				delete(s.m, key)
-				s.usedBytes -= len(existing.val)
-			}
-		}
+		s.deleteExpired(now)
 		s.mu.Unlock()
 	}
 }

@@ -4,11 +4,13 @@ on:
   push:
     paths:
       - ".github/workflows/ci.yml"
+      - "docker-compose.yml"
       - "docker/**"
       - "goserver/**"
   pull_request:
     paths:
       - ".github/workflows/ci.yml"
+      - "docker-compose.yml"
       - "docker/**"
       - "goserver/**"
 
