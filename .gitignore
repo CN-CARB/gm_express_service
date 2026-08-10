@@ -4,3 +4,4 @@ goserver/express-go
 goserver/express-go.exe
 /.omo/run-continuation
 .codegraph
+.omo
