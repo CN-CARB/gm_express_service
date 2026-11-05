@@ -29,11 +29,21 @@ Configuration via environment variables:
 |---|---|---|
 | `API_HOST` | `0.0.0.0` | Address to bind |
 | `API_PORT` | `3000` | Port to bind |
-| `GM_EXPRESS_EXPIRATION` | `300` | Data TTL in seconds |
+| `GM_EXPRESS_EXPIRATION` | `86400` | Data TTL in seconds (24 hours) |
 | `GM_EXPRESS_MAX_ENTRIES` | `1024` | Max stored payloads before eviction |
 | `GM_EXPRESS_MAX_BYTES` | `536870912` | Max retained payload bytes |
 
+Data and tokens default to a 24-hour lifetime. `GM_EXPRESS_EXPIRATION` overrides only the data TTL; token lifetime remains 24 hours, and `/v1/register` reports the token lifetime as `expiration: 86400`. Capacity eviction can remove entries earlier.
+
 Storage is in-memory; restarting the process drops all data and tokens.
+
+Both payloads and tokens use LRU eviction: successful reads and writes promote the entry to most recently used. Reads do not extend TTL. When the entry limit or payload-byte budget is reached, expired entries are reclaimed first, then the least recently used live entries are evicted until the new value fits. A single payload larger than the entire byte budget is rejected without evicting existing entries. Payload and size metadata are one entry and expire or evict together. The byte budget counts retained payload bytes, not total process memory.
+
+Downloads use Go's `http.ServeContent` for HTTP byte ranges, including suffix and open-ended ranges. Successful ranges return `206` with matching byte boundaries. Non-overlapping ranges for a nonempty file return `416` with `Content-Range: bytes */<size>`; an empty file is returned as an empty `200` response. Multipart requests follow the Go runtime's range-count policy: with current Go releases and this module's Go 1.22 compatibility setting, multiple ranges are ignored and the full file is returned with `200`. The service does not override that policy.
+
+## Validation
+
+Run `go test -race ./...` and `go vet ./...` from `goserver/`. Tests cover LRU ordering, count/byte eviction, fixed TTL, failed oversized writes, concurrent access, HTTP compatibility and Range behavior.
 
 ---
 

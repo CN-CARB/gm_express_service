@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -36,7 +37,7 @@ func Test_HTTP_roundtrip_matches_legacy_service(t *testing.T) {
 	size := request(t, handler, http.MethodGet, "/v1/size/"+registration.Client+"/"+written.ID, "", "")
 	revision := request(t, handler, http.MethodGet, "/v1/revision", "", "")
 
-	if registration.Server == "" || registration.Client == "" || registration.Expiration != 300 {
+	if registration.Server == "" || registration.Client == "" || registration.Expiration != 86400 {
 		t.Fatalf("unexpected registration: %+v", registration)
 	}
 	assertStatus(t, write, http.StatusOK)
@@ -74,7 +75,7 @@ func Test_HTTP_errors_match_legacy_service(t *testing.T) {
 	}
 }
 
-func Test_HTTP_ranges_match_legacy_service(t *testing.T) {
+func Test_HTTP_byte_ranges(t *testing.T) {
 	handler, registration := registeredHandler(t, NewStore(5*time.Minute, 1024, 0))
 	write := request(t, handler, http.MethodPost, "/v1/write/"+registration.Server, "0123456789", "")
 	var written struct {
@@ -90,15 +91,35 @@ func Test_HTTP_ranges_match_legacy_service(t *testing.T) {
 		body         string
 		contentRange string
 	}{
-		{"explicit range", "bytes=0-3", http.StatusPartialContent, "0123", "bytes 0-2/10"},
-		{"suffix range", "bytes=-3", http.StatusPartialContent, "0123", "bytes 0-2/10"},
-		{"malformed range", "nonsense", http.StatusOK, "0123456789", ""},
+		{"full body", "", http.StatusOK, "0123456789", ""},
+		{"explicit range", "bytes=0-3", http.StatusPartialContent, "0123", "bytes 0-3/10"},
+		{"single byte", "bytes=0-0", http.StatusPartialContent, "0", "bytes 0-0/10"},
+		{"last byte", "bytes=9-9", http.StatusPartialContent, "9", "bytes 9-9/10"},
+		{"suffix range", "bytes=-3", http.StatusPartialContent, "789", "bytes 7-9/10"},
+		{"large suffix", "bytes=-30", http.StatusPartialContent, "0123456789", "bytes 0-9/10"},
+		{"open ended", "bytes=7-", http.StatusPartialContent, "789", "bytes 7-9/10"},
+		{"clamped end", "bytes=7-99", http.StatusPartialContent, "789", "bytes 7-9/10"},
+		{"start at EOF", "bytes=10-", http.StatusRequestedRangeNotSatisfiable, "", "bytes */10"},
+		{"start beyond EOF", "bytes=99-100", http.StatusRequestedRangeNotSatisfiable, "", "bytes */10"},
+		{"reversed range", "bytes=8-3", http.StatusRequestedRangeNotSatisfiable, "", ""},
+		{"malformed range", "nonsense", http.StatusRequestedRangeNotSatisfiable, "", ""},
+		{"invalid byte offset", "bytes=a-3", http.StatusRequestedRangeNotSatisfiable, "", ""},
+		{"overflow", "bytes=999999999999999999999999-", http.StatusRequestedRangeNotSatisfiable, "", ""},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			response := request(t, handler, http.MethodGet, path, "", tt.rangeHeader)
-			assertResponse(t, response, tt.status, tt.body)
+			assertStatus(t, response, tt.status)
+			if tt.status != http.StatusRequestedRangeNotSatisfiable {
+				assertResponse(t, response, tt.status, tt.body)
+				if got := response.Header().Get("Content-Length"); got != strconv.Itoa(len(tt.body)) {
+					t.Fatalf("Content-Length = %q, want %d", got, len(tt.body))
+				}
+				if got := response.Header().Get("Accept-Ranges"); got != "bytes" {
+					t.Fatalf("Accept-Ranges = %q, want bytes", got)
+				}
+			}
 			if got := response.Header().Get("Content-Range"); got != tt.contentRange {
 				t.Fatalf("Content-Range = %q, want %q", got, tt.contentRange)
 			}
@@ -175,14 +196,28 @@ func Test_HTTP_rejects_known_oversized_body_before_reading(t *testing.T) {
 	}
 }
 
-func Test_HTTP_rejects_write_when_memory_budget_is_full(t *testing.T) {
+func Test_HTTP_evicts_LRU_when_memory_budget_is_full(t *testing.T) {
 	handler, registration := registeredHandler(t, NewStore(5*time.Minute, 1024, 5))
 	first := request(t, handler, http.MethodPost, "/v1/write/"+registration.Server, "12345", "")
 	assertStatus(t, first, http.StatusOK)
 
 	second := request(t, handler, http.MethodPost, "/v1/write/"+registration.Server, "6", "")
 
-	assertResponse(t, second, http.StatusInternalServerError, "Failed to store data")
+	assertStatus(t, second, http.StatusOK)
+	var original, replacement struct {
+		ID string `json:"id"`
+	}
+	decodeJSON(t, first, &original)
+	decodeJSON(t, second, &replacement)
+	assertStatus(t, request(t, handler, http.MethodGet, "/v1/read/"+registration.Client+"/"+original.ID, "", ""), http.StatusNotFound)
+	assertResponse(t, request(t, handler, http.MethodGet, "/v1/size/"+registration.Client+"/"+original.ID, "", ""), http.StatusOK, "{}")
+	assertResponse(t, request(t, handler, http.MethodGet, "/v1/read/"+registration.Client+"/"+replacement.ID, "", ""), http.StatusOK, "6")
+}
+
+func Test_HTTP_rejects_file_larger_than_cache_budget(t *testing.T) {
+	handler, registration := registeredHandler(t, NewStore(time.Hour, 1024, 5))
+	response := request(t, handler, http.MethodPost, "/v1/write/"+registration.Server, "123456", "")
+	assertResponse(t, response, http.StatusInternalServerError, "Failed to store data")
 }
 
 func Test_newServer_bounds_connection_lifetimes(t *testing.T) {

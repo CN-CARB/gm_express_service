@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
@@ -9,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -19,7 +19,7 @@ const (
 )
 
 var (
-	expiration      = time.Duration(envInt("GM_EXPRESS_EXPIRATION", 300)) * time.Second // data TTL
+	expiration      = time.Duration(envInt("GM_EXPRESS_EXPIRATION", 24*60*60)) * time.Second // data TTL
 	tokenExpiration = 24 * time.Hour
 	maxEntries      = envInt("GM_EXPRESS_MAX_ENTRIES", 1024)
 	maxDataBytes    = envInt("GM_EXPRESS_MAX_BYTES", defaultMaxDataBytes)
@@ -76,7 +76,7 @@ func handleRegister(w http.ResponseWriter, r *http.Request) {
 	server, client := makeUUID(), makeUUID()
 	tokenStore.Set(server, nil)
 	tokenStore.Set(client, nil)
-	writeJSON(w, map[string]any{"server": server, "client": client, "expiration": int(expiration.Seconds())})
+	writeJSON(w, map[string]any{"server": server, "client": client, "expiration": int(tokenExpiration.Seconds())})
 }
 
 func handleWrite(w http.ResponseWriter, r *http.Request) {
@@ -112,18 +112,7 @@ func handleRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")
-	status := http.StatusOK
-	fullSize := len(data)
-	if start, end, ok := parseRange(fullSize, r.Header.Get("Range")); ok {
-		last := min(end+1, fullSize)
-		data = data[start:last]
-		status = http.StatusPartialContent
-		w.Header().Set("Accept-Ranges", "bytes")
-		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end-1, fullSize))
-	}
-	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
-	w.WriteHeader(status)
-	_, _ = w.Write(data)
+	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(data))
 }
 
 func handleSize(w http.ResponseWriter, r *http.Request) {
@@ -163,26 +152,6 @@ func newMux(data, tokens *Store) http.Handler {
 		writeText(w, "Not Found - you may need to update the gm_express addon!", http.StatusNotAcceptable)
 	})
 	return mux
-}
-
-func parseRange(total int, header string) (int, int, bool) {
-	if header == "" || !strings.Contains(header, "=") {
-		return 0, 0, false
-	}
-	part := strings.Split(strings.Split(strings.Replace(header, "bytes=", "", 1), ",")[0], "-")
-	start, err := strconv.Atoi(part[0])
-	if err != nil {
-		start = 0
-	}
-	start = min(max(start, 0), total)
-	end := total
-	if len(part) > 1 && part[1] != "" {
-		if parsed, err := strconv.Atoi(part[1]); err == nil {
-			end = parsed
-		}
-	}
-	end = min(max(end, start), total)
-	return start, end, true
 }
 
 func newServer(addr string, handler http.Handler) *http.Server {

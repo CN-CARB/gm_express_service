@@ -1,18 +1,21 @@
 package main
 
 import (
+	"container/list"
 	"sync"
 	"time"
 )
 
 type entry struct {
-	val []byte
-	exp time.Time
+	val  []byte
+	exp  time.Time
+	node *list.Element
 }
 
 type Store struct {
 	mu         sync.RWMutex
 	m          map[string]entry
+	lru        list.List // front is most recently used; values are map keys
 	ttl        time.Duration
 	maxEntries int
 	maxBytes   int
@@ -26,67 +29,57 @@ func NewStore(ttl time.Duration, maxEntries, maxBytes int) *Store {
 }
 
 func (s *Store) Get(key string) ([]byte, bool) {
-	now := time.Now()
-	s.mu.RLock()
+	// A successful read updates recency, but never extends the original TTL.
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	e, ok := s.m[key]
 	if !ok {
-		s.mu.RUnlock()
 		return nil, false
 	}
-	if now.Before(e.exp) {
-		s.mu.RUnlock()
-		return e.val, true
+	if !time.Now().Before(e.exp) {
+		s.remove(key)
+		return nil, false
 	}
-	s.mu.RUnlock()
-
-	s.mu.Lock()
-	if current, exists := s.m[key]; exists && !now.Before(current.exp) {
-		delete(s.m, key)
-		s.usedBytes -= len(current.val)
-	}
-	s.mu.Unlock()
-	return nil, false
+	s.lru.MoveToFront(e.node)
+	return e.val, true
 }
 
 func (s *Store) Set(key string, val []byte) bool {
-	now := time.Now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	current, exists := s.m[key]
-	currentSize := len(current.val)
-	if s.maxBytes > 0 && s.usedBytes-currentSize+len(val) > s.maxBytes {
-		for candidate, existing := range s.m {
-			if candidate != key && !now.Before(existing.exp) {
-				delete(s.m, candidate)
-				s.usedBytes -= len(existing.val)
-			}
-		}
-		if s.usedBytes-currentSize+len(val) > s.maxBytes {
-			return false
-		}
+
+	// An impossible insertion must not evict existing data, including this key.
+	if s.maxEntries <= 0 || (s.maxBytes > 0 && len(val) > s.maxBytes) {
+		return false
 	}
-	if !exists && len(s.m) >= s.maxEntries {
+	now := time.Now()
+	s.remove(key)
+	if len(s.m) >= s.maxEntries || (s.maxBytes > 0 && s.usedBytes+len(val) > s.maxBytes) {
+		// Expired entries may be anywhere in LRU order. Reclaim them before
+		// evicting any live entry, even one less recently used than they are.
 		s.deleteExpired(now)
-		if len(s.m) >= s.maxEntries {
-			// ponytail: random eviction avoids LRU bookkeeping. Add LRU only if
-			// production access patterns prove random eviction harmful.
-			for candidate := range s.m {
-				s.usedBytes -= len(s.m[candidate].val)
-				delete(s.m, candidate)
-				break
-			}
-		}
 	}
-	s.usedBytes += len(val) - currentSize
-	s.m[key] = entry{val: val, exp: now.Add(s.ttl)}
+	for len(s.m) >= s.maxEntries || (s.maxBytes > 0 && s.usedBytes+len(val) > s.maxBytes) {
+		s.remove(s.lru.Back().Value.(string))
+	}
+	s.m[key] = entry{val: val, exp: now.Add(s.ttl), node: s.lru.PushFront(key)}
+	s.usedBytes += len(val)
 	return true
+}
+
+// remove and deleteExpired require the caller to hold s.mu exclusively.
+func (s *Store) remove(key string) {
+	if e, ok := s.m[key]; ok {
+		s.lru.Remove(e.node)
+		s.usedBytes -= len(e.val)
+		delete(s.m, key)
+	}
 }
 
 func (s *Store) deleteExpired(now time.Time) {
 	for key, existing := range s.m {
 		if !now.Before(existing.exp) {
-			delete(s.m, key)
-			s.usedBytes -= len(existing.val)
+			s.remove(key)
 		}
 	}
 }

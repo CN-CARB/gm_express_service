@@ -4,7 +4,7 @@ services:
       context: ./
       dockerfile: ./docker/Dockerfile
     environment:
-      GM_EXPRESS_EXPIRATION: "${GM_EXPRESS_EXPIRATION:-300}"
+      GM_EXPRESS_EXPIRATION: "${GM_EXPRESS_EXPIRATION:-86400}"
       GM_EXPRESS_MAX_ENTRIES: "${GM_EXPRESS_MAX_ENTRIES:-1024}"
       GM_EXPRESS_MAX_BYTES: "${GM_EXPRESS_MAX_BYTES:-536870912}"
     ports:
