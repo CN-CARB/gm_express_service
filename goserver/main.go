@@ -137,7 +137,7 @@ func newMux(data, tokens *Store) http.Handler {
 	dataStore, tokenStore = data, tokens
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "https://github.com/CFC-Servers/gm_express", http.StatusFound)
+		http.Redirect(w, r, "https://github.com/CN-CARB/NetLFS", http.StatusFound)
 	})
 	mux.HandleFunc("GET /v1/register", handleRegister)
 	mux.HandleFunc("GET /v1/read/{token}/{id}", handleRead)

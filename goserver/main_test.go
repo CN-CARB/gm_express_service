@@ -49,6 +49,15 @@ func Test_HTTP_roundtrip_matches_legacy_service(t *testing.T) {
 	assertResponse(t, revision, http.StatusOK, `{"revision":1}`)
 }
 
+func Test_HTTP_root_redirects_to_NetLFS(t *testing.T) {
+	handler, _ := registeredHandler(t, NewStore(time.Hour, 10, 0))
+	response := request(t, handler, http.MethodGet, "/", "", "")
+	assertStatus(t, response, http.StatusFound)
+	if location := response.Header().Get("Location"); location != "https://github.com/CN-CARB/NetLFS" {
+		t.Fatalf("unexpected redirect location: %q", location)
+	}
+}
+
 func Test_HTTP_errors_match_legacy_service(t *testing.T) {
 	handler, registration := registeredHandler(t, NewStore(5*time.Minute, 1024, 0))
 

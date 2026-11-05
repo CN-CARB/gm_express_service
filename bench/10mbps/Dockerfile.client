@@ -1,0 +1,4 @@
+FROM python:3.13-alpine
+RUN apk add --no-cache iproute2
+ENTRYPOINT ["/bin/sh", "-ec"]
+CMD ["tc qdisc add dev eth0 root tbf rate ${BENCH_RATE:-10mbit} burst 16kb latency 500ms; exec python /bench/run.py"]

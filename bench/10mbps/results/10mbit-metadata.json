@@ -1,0 +1,63 @@
+{
+  "rate": "10mbit",
+  "python": "3.13.18",
+  "sizes": [
+    [
+      "100KiB",
+      102400
+    ],
+    [
+      "1MiB",
+      1048576
+    ],
+    [
+      "10MiB",
+      10485760
+    ]
+  ],
+  "sequential_repeats": 3,
+  "concurrent_rounds": 2,
+  "express_delay_s": 0.15,
+  "scope": "Actual HTTP services; Python model of addon upload/receive caches; no GMod/net/Protobuf/serialization/TLS",
+  "client_qdisc_before": [
+    {
+      "kind": "tbf",
+      "handle": "8003:",
+      "root": true,
+      "refcnt": 17,
+      "options": {
+        "rate": 1250000,
+        "burst": 16384,
+        "lat": 500000
+      },
+      "bytes": 42,
+      "packets": 1,
+      "drops": 0,
+      "overlimits": 0,
+      "requeues": 0,
+      "backlog": 0,
+      "qlen": 0
+    }
+  ],
+  "client_qdisc_after": [
+    {
+      "kind": "tbf",
+      "handle": "8003:",
+      "root": true,
+      "refcnt": 17,
+      "options": {
+        "rate": 1250000,
+        "burst": 16384,
+        "lat": 500000
+      },
+      "bytes": 276131320,
+      "packets": 304348,
+      "drops": 0,
+      "overlimits": 355805,
+      "requeues": 0,
+      "backlog": 0,
+      "qlen": 0
+    }
+  ],
+  "verified_transfers": 102
+}

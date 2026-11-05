@@ -1,0 +1,195 @@
+{
+  "go": [
+    {
+      "Id": "sha256:abc7efc4b00d00b1f4fa29eda6c31489ede2cf9fce6a021a173eec4ab725fb6e",
+      "RepoTags": [
+        "gm-express-bench-go:local"
+      ],
+      "RepoDigests": [
+        "gm-express-bench-go@sha256:abc7efc4b00d00b1f4fa29eda6c31489ede2cf9fce6a021a173eec4ab725fb6e"
+      ],
+      "Comment": "buildkit.dockerfile.v0",
+      "Created": "2026-11-06T04:03:26.784846989+08:00",
+      "Config": {
+        "Env": [
+          "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        ],
+        "Entrypoint": [
+          "/bin/sh",
+          "-ec"
+        ],
+        "Cmd": [
+          "tc qdisc add dev eth0 root tbf rate ${BENCH_RATE:-10mbit} burst 16kb latency 500ms; exec /express-go"
+        ],
+        "WorkingDir": "/",
+        "ArgsEscaped": true
+      },
+      "Architecture": "amd64",
+      "Os": "linux",
+      "Size": 31729385,
+      "RootFS": {
+        "Type": "layers",
+        "Layers": [
+          "sha256:74d97c428c51a828f9051a7a40a53ff1fc99e54fc30323ce36760701b0b7f711",
+          "sha256:931fae1fa9d711f2332e6c8e1b8c41fc2aea0178f7e833527c5e56c096ae19ee",
+          "sha256:84c2eccaac8ce063f433b2635ce71916cd9677615d06b1fc40263d9d1c43095e"
+        ]
+      },
+      "Metadata": {
+        "LastTagTime": "2026-11-05T20:03:27.291306348Z"
+      },
+      "Descriptor": {
+        "mediaType": "application/vnd.oci.image.index.v1+json",
+        "digest": "sha256:abc7efc4b00d00b1f4fa29eda6c31489ede2cf9fce6a021a173eec4ab725fb6e",
+        "size": 855
+      },
+      "Identity": {
+        "Build": [
+          {
+            "Ref": "tr5stc047lwok1pmmglp6t2rb",
+            "CreatedAt": "2026-11-06T04:03:27.479289906+08:00"
+          }
+        ]
+      }
+    }
+  ],
+  "js": [
+    {
+      "Id": "sha256:b769102eb814b9ed7ea99102a9cb6b8b7e2817b717dab4c70b26273cb4e22dc9",
+      "RepoTags": [
+        "gm-express-bench-js:local"
+      ],
+      "RepoDigests": [
+        "gm-express-bench-js@sha256:b769102eb814b9ed7ea99102a9cb6b8b7e2817b717dab4c70b26273cb4e22dc9"
+      ],
+      "Comment": "buildkit.dockerfile.v0",
+      "Created": "2026-11-06T04:00:20.270940224+08:00",
+      "Config": {
+        "User": "root",
+        "Env": [
+          "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+          "DENO_USE_CGROUPS=1",
+          "DENO_DIR=/deno-dir/",
+          "DENO_INSTALL_ROOT=/usr/local",
+          "DENO_VERSION=2.9.8"
+        ],
+        "Entrypoint": [
+          "/bin/sh",
+          "-ec"
+        ],
+        "Cmd": [
+          "tc qdisc add dev eth0 root tbf rate ${BENCH_RATE:-10mbit} burst 16kb latency 500ms; exec deno run --cached-only --allow-net --allow-read --allow-env /app/index.js"
+        ],
+        "WorkingDir": "/app",
+        "Labels": {
+          "org.opencontainers.image.description": "Deno Docker image (Alpine)",
+          "org.opencontainers.image.licenses": "MIT",
+          "org.opencontainers.image.source": "https://github.com/denoland/deno_docker",
+          "org.opencontainers.image.title": "Deno",
+          "org.opencontainers.image.url": "https://github.com/denoland/deno_docker",
+          "org.opencontainers.image.version": "2.9.8"
+        },
+        "ArgsEscaped": true
+      },
+      "Architecture": "amd64",
+      "Os": "linux",
+      "Size": 167493135,
+      "RootFS": {
+        "Type": "layers",
+        "Layers": [
+          "sha256:74d97c428c51a828f9051a7a40a53ff1fc99e54fc30323ce36760701b0b7f711",
+          "sha256:3fa1b3c0c26da1e7e030d74490891272d21b1a1793c552c5b1c2ac871705ced4",
+          "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef",
+          "sha256:6f4d9a8037b8362c2a9eb2fa4be41548c0aa7c8a308aa296ade4ebac2400e3da",
+          "sha256:987e193d63bb8e4d02cf32462c092377078fd81997997b9a97b61ec15a2da86c",
+          "sha256:38f49cabdf61e20074275fe4390aa740d12e11a5cb51c865c843e4298cf1b428",
+          "sha256:e72cdf8d5b175a037a0419f79e0e0af300810a0d581dc727dc7ffd4dcb08c53c",
+          "sha256:a1a45dd5c676a056fc9c7cb3e94f1d482f46a391324ce536a0b3ce01c6bc5403",
+          "sha256:0ff06f8ca98b9d2fd992d5f03398610bed23eb1dfef2c3735278dab378dec782",
+          "sha256:5d491aad61a30a263f3a45b4e494b55121a01236220aa7966dff7bb8f79c2d6e",
+          "sha256:8a4048113bf952c324d66179f3524ddfe14bb4d08eafe5d5799ebcf7b753eff5",
+          "sha256:ccf3ce4367e5f4e18337666b38721eb5279eecff6a75a1a349d168d9923b32a0",
+          "sha256:b98c141e7ab1ff4705e494a9a52f52ed64daf000ac6398114f6106348bd5c380",
+          "sha256:b3951fdc49945b93ef940a8afadda46d1a9fe4540f5cbc4652299e05b0969448",
+          "sha256:cc10038b80a64495bebaff656090d393e6a11da5f68cbf50ae3b1b23638d505a"
+        ]
+      },
+      "Metadata": {
+        "LastTagTime": "2026-11-05T20:03:28.923211797Z"
+      },
+      "Descriptor": {
+        "mediaType": "application/vnd.oci.image.index.v1+json",
+        "digest": "sha256:b769102eb814b9ed7ea99102a9cb6b8b7e2817b717dab4c70b26273cb4e22dc9",
+        "size": 856
+      },
+      "Identity": {
+        "Build": [
+          {
+            "Ref": "p2o79v4kc0cm433heoc4q7bsi",
+            "CreatedAt": "2026-11-06T04:03:28.956799574+08:00"
+          }
+        ]
+      }
+    }
+  ],
+  "client": [
+    {
+      "Id": "sha256:1812c20248d42cfb5c7a9b5560cf33ffa59f4d40643519b0d8d4fb5745a277b3",
+      "RepoTags": [
+        "gm-express-bench-client:local"
+      ],
+      "RepoDigests": [
+        "gm-express-bench-client@sha256:1812c20248d42cfb5c7a9b5560cf33ffa59f4d40643519b0d8d4fb5745a277b3"
+      ],
+      "Comment": "buildkit.dockerfile.v0",
+      "Created": "2026-11-06T04:00:32.259375397+08:00",
+      "Config": {
+        "Env": [
+          "PATH=/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+          "LANG=C.UTF-8",
+          "GPG_KEY=7169605F62C751356D054A26A821E680E5FA6305",
+          "PYTHON_VERSION=3.13.18",
+          "PYTHON_SHA256=abb0102e6d4ae027509bcb82327d9dd85515b44a3ba8ad538cfc5e9847029f68"
+        ],
+        "Entrypoint": [
+          "/bin/sh",
+          "-ec"
+        ],
+        "Cmd": [
+          "tc qdisc add dev eth0 root tbf rate ${BENCH_RATE:-10mbit} burst 16kb latency 500ms; exec python /bench/run.py"
+        ],
+        "WorkingDir": "/",
+        "ArgsEscaped": true
+      },
+      "Architecture": "amd64",
+      "Os": "linux",
+      "Size": 74566203,
+      "RootFS": {
+        "Type": "layers",
+        "Layers": [
+          "sha256:75c137aedfb2760f88629236cb7b797630aed0c3d91d626d1d1bb694878fc2ba",
+          "sha256:322a3b93f345af149cd089c23cc33fcf221aa5dd4d2250165267b3dc9af90568",
+          "sha256:2addde02c3f4dd1c51aed79e3beeda5fd492bc4c9ffcfccf53c63bdaa1ed7364",
+          "sha256:9bbffd293cf732db4fac52a6e9ee5a5454bf6940099b3603dedcf9593a8a40dc",
+          "sha256:28e653e0cb6ea02af52bf7fb48308db3217647d38ec3616e90abc0cf3b71118f"
+        ]
+      },
+      "Metadata": {
+        "LastTagTime": "2026-11-05T20:03:30.51338232Z"
+      },
+      "Descriptor": {
+        "mediaType": "application/vnd.oci.image.index.v1+json",
+        "digest": "sha256:1812c20248d42cfb5c7a9b5560cf33ffa59f4d40643519b0d8d4fb5745a277b3",
+        "size": 856
+      },
+      "Identity": {
+        "Build": [
+          {
+            "Ref": "nwwnj4b71ciw2m468m4u0zzlk",
+            "CreatedAt": "2026-11-06T04:03:30.527104897+08:00"
+          }
+        ]
+      }
+    }
+  ]
+}

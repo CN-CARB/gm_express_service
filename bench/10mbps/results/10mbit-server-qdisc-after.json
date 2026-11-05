@@ -1,0 +1,42 @@
+{
+  "go": [
+    {
+      "kind": "tbf",
+      "handle": "8001:",
+      "root": true,
+      "refcnt": 17,
+      "options": {
+        "rate": 1250000,
+        "burst": 16384,
+        "lat": 500000
+      },
+      "bytes": 173669156,
+      "packets": 162621,
+      "drops": 0,
+      "overlimits": 225917,
+      "requeues": 0,
+      "backlog": 0,
+      "qlen": 0
+    }
+  ],
+  "js": [
+    {
+      "kind": "tbf",
+      "handle": "8002:",
+      "root": true,
+      "refcnt": 17,
+      "options": {
+        "rate": 1250000,
+        "burst": 16384,
+        "lat": 500000
+      },
+      "bytes": 210209540,
+      "packets": 187256,
+      "drops": 0,
+      "overlimits": 274259,
+      "requeues": 0,
+      "backlog": 0,
+      "qlen": 0
+    }
+  ]
+}

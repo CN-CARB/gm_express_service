@@ -7,6 +7,10 @@ This is the backend web project that supports the [GMod Express Addon](https://g
 
 This repository now ships the self-hosted Go service only; the former Cloudflare Worker deployment has been retired.
 
+## Protocol reference
+
+[Go HTTP protocol and client integration (中文)](docs/protocol.md). The service root (`GET /`) redirects to [NetLFS](https://github.com/CN-CARB/NetLFS); use `/v1/revision` for health checks.
+
 ## Deploy your own
 
 The included `docker-compose.yml` builds and runs the Go service:
@@ -43,7 +47,9 @@ Downloads use Go's `http.ServeContent` for HTTP byte ranges, including suffix an
 
 ## Validation
 
-Run `go test -race ./...` and `go vet ./...` from `goserver/`. Tests cover LRU ordering, count/byte eviction, fixed TTL, failed oversized writes, concurrent access, HTTP compatibility and Range behavior.
+Run `go test -race ./...` and `go vet ./...` from `goserver/`. Tests cover LRU ordering, count/byte eviction, fixed TTL, failed oversized writes, concurrent access, HTTP compatibility, the NetLFS redirect and Range behavior.
+
+[10 / 200 Mbps benchmark methodology](bench/10mbps/README.md) and [measured results](bench/10mbps/RESULTS.md) include raw samples and reproducible Docker tooling. They measure real HTTP services with modeled client cache flows, not in-engine GMod performance.
 
 ---
 
